@@ -125,7 +125,7 @@ namespace MonsieurMeh.Mods.TLD.BearSpearReloaded
                 __instance.m_HitSourcePosition = playerTransform.position;
                 __instance.m_HitDamage = __instance.m_DamageDealt;
                 __instance.m_HitBleedOutMinutes = __instance.m_BleedOutMinutes;
-                bai.OnSpearHit(__instance.IsDamageFatal(bai, __instance.m_DamageDealt), default);
+                bai.OnSpearHit(__instance.IsDamageFatal(bai, __instance.m_DamageDealt), bai.m_SpearStruggleEndAction);
                 return false;
             }
         }
@@ -227,15 +227,40 @@ namespace MonsieurMeh.Mods.TLD.BearSpearReloaded
         [HarmonyPatch(typeof(BearSpearItem), "SetCurrentState", new Type[] { typeof(SpearState) })]
         internal class BearSpearItemPatches_SetCurrentState
         {
-            public static bool Prefix(SpearState state)
+            public static bool Prefix(SpearState state, BearSpearItem __instance)
             {
-                Log($"begin void BearSpearItem.SetCurrentState({state})");
-                return true;
-            }
-
-            public static void Postfix()
-            {
-                Log($"end void BearSpearItem.SetCurrentState()");
+                switch (state)
+                {
+                    case SpearState.None:
+                        __instance.OnEnter_None();
+                        break;
+                    case SpearState.Setting:
+                        __instance.OnEnter_Setting();
+                        break;
+                    case SpearState.Raised:
+                        __instance.OnEnter_Raised();
+                        break;
+                    case SpearState.Recovering:
+                        PlayerAnimation newPlayerAnimation = GameManager.m_NewPlayerAnimation;
+                        if (newPlayerAnimation == null)
+                        {
+                            LogError("Null new player animation at BearSpearItem.SetCurrentState(Recovering)!");
+                            return false;
+                        }
+                        float recoveryTime = __instance.m_RecoverSpearDurationSeconds;
+                        newPlayerAnimation.SetParameterSetSpearMultiplier(recoveryTime > 0.01f ? __instance.m_AnimationRecoverBaseDuration / recoveryTime : 10000f);
+                        if (__instance.m_HasTriggeredGenericAim)
+                        {
+                            newPlayerAnimation.Trigger_Generic_Aim_Cancel(newPlayerAnimation.m_AnimationEvent_Generic_Aim_Cancel_Complete, false);
+                        }
+                        __instance.m_HasTriggeredGenericAim = false;
+                        break;
+                }
+                if (__instance.m_PendingSpearState == state)
+                {
+                    __instance.m_CurrentSpearState = state;
+                }
+                return false;
             }
         }
 
@@ -244,47 +269,70 @@ namespace MonsieurMeh.Mods.TLD.BearSpearReloaded
         [HarmonyPatch(typeof(BearSpearItem), "OnStruggleHitEnd")]
         internal class BearSpearItemPatches_OnStruggleHitEnd
         {
-            public static bool Prefix()
+            public static bool Prefix(BearSpearItem __instance)
             {
-                Log($"begin void BearSpearItem.OnStruggleHitEnd()");
-                return true;
+                if (__instance.m_HitAi == null || __instance.m_HitAi.gameObject == null)
+                {
+                    LogError("Null HitAi or HitAi.gameObject on BearSpearItem.OnStruggleHitEnd!");
+                    return false;
+                }
+                if (__instance.m_GearItem == null)
+                {
+                    LogError("Null gear item on BearSpearItem.OnStruggleHitEnd!");
+                    return false;
+                }
+                PlayerStruggle playerStruggle = GameManager.m_PlayerStruggle;
+                if (playerStruggle == null)
+                {
+                    LogError("Null playerStruggle on bearSpearItem.OnStruggleHitEnd!");
+                    return false;
+                }
+                if (playerStruggle.m_BearSpearStruggleOutcome == BearSpearStruggleOutcome.Failed)
+                {
+                    __instance.m_HitDamage = 0.0f;
+                    __instance.m_HitBleedOutMinutes = 0.0f;
+                }
+                if (__instance.m_LocalizedDamage != null)
+                {
+                    __instance.m_HitAi.SetupDamageForAnim(__instance.m_HitPosition, __instance.m_HitSourcePosition, __instance.m_LocalizedDamage);
+                }
+                __instance.m_HitAi.ApplyDamage(__instance.m_HitDamage, __instance.m_HitBleedOutMinutes, DamageSource.Player, string.Empty); //string literal for this call was blank, not sure whats up there. might be a default to blank on c# side?
+                __instance.m_GearItem.DegradeOnUse();
+                if (__instance.m_GearItem.m_WornOut)
+                {
+                    __instance.Break();
+                }
+                return false;
             }
 
-            public static void Postfix()
-            {
-                Log($"end void BearSpearItem.OnStruggleHitEnd()");
-            }
+ 
         }
 
 
         [HarmonyPatch(typeof(BearSpearItem), "Break")]
         internal class BearSpearItemPatches_Break
         {
-            public static bool Prefix()
+            public static bool Prefix(BearSpearItem __instance)
             {
-                Log($"begin void BearSpearItem.Break()");
-                return true;
-            }
-
-            public static void Postfix()
-            {
-                Log($"end void BearSpearItem.Break()");
-            }
-        }
-
-
-        [HarmonyPatch(typeof(BearSpearItem), "DistanceToNearestSpearable")]
-        internal class BearSpearItemPatches_DistanceToNearestSpearable
-        {
-            public static bool Prefix()
-            {
-                Log($"begin float BearSpearItem.DistanceToNearestSpearable()");
-                return true;
-            }
-
-            public static void Postfix(float __result)
-            {
-                Log($"end float BearSpearItem.DistanceToNearestSpearable() => {__result}");
+                if (__instance.m_BrokenSpearPrefab == null)
+                {
+                    LogError("Null broken spear prefab on BearSpearItem.Break!");
+                    return false;
+                }
+                GameObject newBrokenSpearPrefab = GameObject.Instantiate(__instance.m_BrokenSpearPrefab);
+                GearItem newBrokenSpearGearItem = newBrokenSpearPrefab.GetComponent<GearItem>();
+                newBrokenSpearPrefab.name = __instance.m_BrokenSpearPrefab.name;
+                if (!newBrokenSpearGearItem.m_InPlayerInventory)
+                {
+                    newBrokenSpearGearItem.transform.position = __instance.transform.position;
+                    newBrokenSpearGearItem.transform.rotation = __instance.transform.rotation;
+                }
+                else
+                {
+                    GameManager.m_Inventory.AddGear(newBrokenSpearGearItem, false);
+                }
+                GameManager.m_Inventory.DestroyGear(__instance.gameObject);
+                return false;
             }
         }
 
@@ -358,82 +406,13 @@ namespace MonsieurMeh.Mods.TLD.BearSpearReloaded
         }
 
 
-        [HarmonyPatch(typeof(BearSpearItem), "LateUpdate")]
-        internal class BearSpearItemPatches_LateUpdate
-        {
-            public static bool Prefix()
-            {
-                Log($"begin void BearSpearItem.LateUpdate()");
-                return true;
-            }
-
-            public static void Postfix()
-            {
-                Log($"end void BearSpearItem.LateUpdate()");
-            }
-        }
-
-
-        [HarmonyPatch(typeof(BearSpearItem), "IsRaised")]
-        internal class BearSpearItemPatches_IsRaised
-        {
-            public static bool Prefix()
-            {
-                Log($"begin bool BearSpearItem.IsRaised()");
-                return true;
-            }
-
-            public static void Postfix(bool __result)
-            {
-                Log($"end bool BearSpearItem.IsRaised() => {__result}");
-            }
-        }
-
-
-        [HarmonyPatch(typeof(BearSpearItem), "IsRaisedOrRaisingOrLowering")]
-        internal class BearSpearItemPatches_IsRaisedOrRaisingOrLowering
-        {
-            public static bool Prefix()
-            {
-                Log($"begin bool BearSpearItem.IsRaisedOrRaisingOrLowering()");
-                return true;
-            }
-
-            public static void Postfix(bool __result)
-            {
-                Log($"end bool BearSpearItem.IsRaisedOrRaisingOrLowering() => {__result}");
-            }
-        }
-
-
-        [HarmonyPatch(typeof(BearSpearItem), "GetActionElapsedInSeconds")]
-        internal class BearSpearItemPatches_GetActionElapsedInSeconds
-        {
-            public static bool Prefix()
-            {
-                Log($"begin float BearSpearItem.GetActionElapsedInSeconds()");
-                return true;
-            }
-
-            public static void Postfix(float __result)
-            {
-                Log($"end float BearSpearItem.GetActionElapsedInSeconds() => {__result}");
-            }
-        }
-
-
         [HarmonyPatch(typeof(BearSpearItem), "CanStartZoom")]
         internal class BearSpearItemPatches_CanStartZoom
         {
-            public static bool Prefix()
+            public static bool Prefix(BearSpearItem __instance, ref bool __result)
             {
-                Log($"begin bool BearSpearItem.CanStartZoom()");
-                return true;
-            }
-
-            public static void Postfix(bool __result)
-            {
-                Log($"end bool BearSpearItem.CanStartZoom() => {__result}");
+                __result = __instance.m_CurrentSpearState == SpearState.Raised;
+                return false;
             }
         }
 
@@ -441,15 +420,10 @@ namespace MonsieurMeh.Mods.TLD.BearSpearReloaded
         [HarmonyPatch(typeof(BearSpearItem), "CheckStaminaForRaising")]
         internal class BearSpearItemPatches_CheckStaminaForRaising
         {
-            public static bool Prefix()
+            public static bool Prefix(ref bool __result)
             {
-                Log($"begin bool BearSpearItem.CheckStaminaForRaising()");
-                return true;
-            }
-
-            public static void Postfix(bool __result)
-            {
-                Log($"end bool BearSpearItem.CheckStaminaForRaising() => {__result}");
+                __result = GameManager.m_PlayerMovement.m_SprintStamina > 0.0001f;
+                return false;
             }
         }
 
@@ -457,15 +431,10 @@ namespace MonsieurMeh.Mods.TLD.BearSpearReloaded
         [HarmonyPatch(typeof(BearSpearItem), "CanEndZoom")]
         internal class BearSpearItemPatches_CanEndZoom
         {
-            public static bool Prefix()
+            public static bool Prefix(BearSpearItem __instance, ref bool __result)
             {
-                Log($"begin bool BearSpearItem.CanEndZoom()");
-                return true;
-            }
-
-            public static void Postfix(bool __result)
-            {
-                Log($"end bool BearSpearItem.CanEndZoom() => {__result}");
+                __result = __instance.m_CurrentSpearState == SpearState.Raised;
+                return false;
             }
         }
 
@@ -473,31 +442,18 @@ namespace MonsieurMeh.Mods.TLD.BearSpearReloaded
         [HarmonyPatch(typeof(BearSpearItem), "ZoomStart")]
         internal class BearSpearItemPatches_ZoomStart
         {
-            public static bool Prefix()
+            public static bool Prefix(BearSpearItem __instance)
             {
-                Log($"begin void BearSpearItem.ZoomStart()");
-                return true;
-            }
-
-            public static void Postfix()
-            {
-                Log($"end void BearSpearItem.ZoomStart()");
-            }
-        }
-
-
-        [HarmonyPatch(typeof(BearSpearItem), "GetCurrentSpearState")]
-        internal class BearSpearItemPatches_GetCurrentSpearState
-        {
-            public static bool Prefix()
-            {
-                Log($"begin SpearState BearSpearItem.GetCurrentSpearState()");
-                return true;
-            }
-
-            public static void Postfix(SpearState __result)
-            {
-                Log($"end SpearState BearSpearItem.GetCurrentSpearState() => {__result}");
+                if (__instance.m_CurrentSpearState != SpearState.Setting)
+                {
+                    __instance.m_PendingSpearState = SpearState.Setting;
+                    __instance.OnEnter_Setting();
+                    if (__instance.m_PendingSpearState == SpearState.Setting)
+                    {
+                        __instance.m_CurrentSpearState = SpearState.Setting;
+                    }
+                }
+                return false;
             }
         }
 
@@ -505,15 +461,18 @@ namespace MonsieurMeh.Mods.TLD.BearSpearReloaded
         [HarmonyPatch(typeof(BearSpearItem), "RestoreYawPitchLimits")]
         internal class BearSpearItemPatches_RestoreYawPitchLimits
         {
-            public static bool Prefix()
+            public static bool Prefix(BearSpearItem __instance)
             {
-                Log($"begin void BearSpearItem.RestoreYawPitchLimits()");
-                return true;
-            }
-
-            public static void Postfix()
-            {
-                Log($"end void BearSpearItem.RestoreYawPitchLimits()");
+                vp_FPSCamera camera = GameManager.m_vpFPSCamera;
+                if (camera == null)
+                {
+                    LogError("Nul vp_FPSCamera on BearSpearitem.RestoreYawPitchLimits!");
+                    return false;
+                }
+                camera.RotationPitchLimit = __instance.m_StartPitchLimit;
+                camera.RotationYawLimit = __instance.m_StartYawLimit;
+                camera.UnlockRotationLimit();
+                return false;
             }
         }
 
@@ -521,31 +480,29 @@ namespace MonsieurMeh.Mods.TLD.BearSpearReloaded
         [HarmonyPatch(typeof(BearSpearItem), "ZoomEnd")]
         internal class BearSpearItemPatches_ZoomEnd
         {
-            public static bool Prefix()
+            public static bool Prefix(BearSpearItem __instance)
             {
-                Log($"begin void BearSpearItem.ZoomEnd()");
-                return true;
-            }
-
-            public static void Postfix()
-            {
-                Log($"end void BearSpearItem.ZoomEnd()");
-            }
+                __instance.SetCurrentState(SpearState.Recovering);
+                    return false;
+            }       
         }
 
 
         [HarmonyPatch(typeof(BearSpearItem), "CancelAction")]
         internal class BearSpearItemPatches_CancelAction
         {
-            public static bool Prefix()
+            public static bool Prefix(BearSpearItem __instance)
             {
-                Log($"begin void BearSpearItem.CancelAction()");
-                return true;
-            }
-
-            public static void Postfix()
-            {
-                Log($"end void BearSpearItem.CancelAction()");
+                if (__instance.m_CurrentSpearState != SpearState.None)
+                {
+                    __instance.m_PendingSpearState = SpearState.None;
+                    __instance.OnEnter_None();
+                    if (__instance.m_PendingSpearState == SpearState.None)
+                    {
+                        __instance.m_CurrentSpearState = SpearState.None;
+                    }
+                }
+                return false;
             }
         }
 
@@ -553,15 +510,18 @@ namespace MonsieurMeh.Mods.TLD.BearSpearReloaded
         [HarmonyPatch(typeof(BearSpearItem), "HitAction")]
         internal class BearSpearItemPatches_HitAction
         {
-            public static bool Prefix()
+            public static bool Prefix(BearSpearItem __instance)
             {
-                Log($"begin void BearSpearItem.HitAction()");
-                return true;
-            }
-
-            public static void Postfix()
-            {
-                Log($"end void BearSpearItem.HitAction()");
+                if (__instance.m_CurrentSpearState != SpearState.None)
+                {
+                    __instance.m_PendingSpearState = SpearState.None;
+                    __instance.OnEnter_None();
+                    if (__instance.m_PendingSpearState == SpearState.None)
+                    {
+                        __instance.m_CurrentSpearState = SpearState.None;
+                    }
+                }
+                return false;
             }
         }
 
