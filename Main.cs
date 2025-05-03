@@ -39,14 +39,5 @@ namespace MonsieurMeh.Mods.TLD.BearSpearReloaded
             mInitialized = mManager.Shutdown();
             return !mInitialized;
         }
-
-
-        public override void OnUpdate()
-        {
-            if (mInitialized)
-            {
-                mManager.Update();
-            }
-        }
     }
 }

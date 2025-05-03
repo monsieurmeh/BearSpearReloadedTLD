@@ -5,11 +5,12 @@
 
 using Il2Cpp;
 using Il2CppInterop.Runtime.Injection;
+using System.Collections;
 using UnityEngine;
 
 namespace MonsieurMeh.Mods.TLD.BearSpearReloaded
 {
-    public class BearSpearReloadedManager
+    public class BearSpearReloadedManager : MonoBehaviour //just so I can get coroutines working and avoid constant update method running while spear is out and/or thrown into world... hate update methods
     {
         #region Consts & Enums
 
@@ -45,7 +46,6 @@ namespace MonsieurMeh.Mods.TLD.BearSpearReloaded
         private bool mEnabled = false;
         private long mStartTime = System.DateTime.Now.Ticks;
 
-
         private long TicksSinceStart { get { return System.DateTime.Now.Ticks - mStartTime; } }
 
 
@@ -78,24 +78,30 @@ namespace MonsieurMeh.Mods.TLD.BearSpearReloaded
         }
 
 
-        public void Update()
-        {
-
-        }
-
-
         public void Log(string message, bool error = false)
         {
-            string logMessage = $"[{TicksSinceStart}t/{TicksSinceStart * MillisecondsPerTick}ms/{TicksSinceStart * SecondsPerTick}s] {message}";
-            if (error)
+#if DEV_BUILD
+            try
             {
-                mLogErrorAction.Invoke(logMessage);
+#endif
+                string logMessage = $"[{TicksSinceStart}t/{TicksSinceStart * MillisecondsPerTick}ms/{TicksSinceStart * SecondsPerTick}s] {message}";
+                if (error)
+                {
+                    mLogErrorAction.Invoke(logMessage);
+                }
+                else
+                {
+                    mLogMessageAction.Invoke(logMessage);
+                }
+#if DEV_BUILD
             }
-            else
+            catch (Exception e)
             {
-                mLogMessageAction.Invoke(logMessage);
+                Debug.LogError($"Error while trying to log a message: {e}");
             }
+#endif
         }
+
 
 
         
