@@ -20,11 +20,46 @@ namespace MonsieurMeh.Mods.TLD.BearSpearReloaded
                     return false;
                 }
 
+                if (GameManager.m_SuppressWeaponAim)
+                {
+                    return false;
+                }
+
                 BearSpearItem spear = pm.m_ItemInHandsInternal.m_BearSpearItem;
 
                 if (spear == null)
                 {
                     return false;
+                }
+
+                if (spear.m_CurrentSpearState == (BearSpearItem.SpearState)4)
+                {
+                    if (InputManager.GetFirePressed(__instance))
+                    {
+                        spear.m_CurrentSpearState = BearSpearItem.SpearState.None;
+                        __instance.m_InteractReleaseRequiredBeforeSpearZoom = false;
+                        __instance.m_CancelSpearZoomRequested = false;
+                        __instance.MaybeCancelZoomInternal();
+                        Log("pewpew!"); 
+                        return false;
+                    }
+                    else if (InputManager.GetAltFireReleased(__instance))
+                    {
+                        spear.m_CurrentSpearState = BearSpearItem.SpearState.None; 
+                        __instance.m_InteractReleaseRequiredBeforeSpearZoom = false;
+                        __instance.m_CancelSpearZoomRequested = false;
+                        __instance.MaybeCancelZoomInternal();
+                        return false;
+                    }
+                }
+
+
+                if (spear.m_CurrentSpearState == BearSpearItem.SpearState.None && InputManager.GetAltFirePressed(__instance))
+                {
+                    spear.m_CurrentSpearState = (BearSpearItem.SpearState)4;
+                    __instance.SetState("Zoom", true);
+                    __instance.FPSCamera.ToggleZoom(true);
+                    __instance.m_InZoom = true;
                 }
 
 
