@@ -7,6 +7,7 @@ using Il2Cpp;
 using Il2CppInterop.Runtime.Injection;
 using System.Collections;
 using UnityEngine;
+using static MonsieurMeh.Mods.TLD.BearSpearReloaded.BearSpearReloadedManager;
 
 namespace MonsieurMeh.Mods.TLD.BearSpearReloaded
 {
@@ -16,8 +17,18 @@ namespace MonsieurMeh.Mods.TLD.BearSpearReloaded
 
         const float MillisecondsPerTick = 0.0001f;
         const float SecondsPerTick = MillisecondsPerTick * 0.001f;
-        const long TicksPerUpdate = 10000000;
+
+        const long TicksPerMillisecond = 10000;
+        const long TicksPerSecond = TicksPerMillisecond * 1000;
+
         const string Null = "null";
+
+        public enum Readouts : int
+        {
+            vp_FPSPLayer_HandleBearSpearInput = 0,
+            BearSpearItem_Update = 1,
+            COUNT
+        }
 
         #endregion
 
@@ -45,6 +56,7 @@ namespace MonsieurMeh.Mods.TLD.BearSpearReloaded
         private bool mInitialized = false;
         private bool mEnabled = false;
         private long mStartTime = System.DateTime.Now.Ticks;
+        private long[] mLastReadout = new long[(int)Readouts.COUNT];
 
         private long TicksSinceStart { get { return System.DateTime.Now.Ticks - mStartTime; } }
 
@@ -78,13 +90,35 @@ namespace MonsieurMeh.Mods.TLD.BearSpearReloaded
         }
 
 
+        public bool ReadyForReadout(Readouts readoutType, int msFrequency)
+        {
+            return System.DateTime.Now.Ticks - mLastReadout[(int)readoutType] >= msFrequency * TicksPerMillisecond;
+        }
+
+
+        public void TryReadout(string message, Readouts readoutType, int msFrequency)
+        {
+            if (ReadyForReadout(readoutType, msFrequency))
+            {
+                Readout(message, readoutType);
+            }
+        }
+
+
+        public void Readout(string message, Readouts readoutType)
+        {
+            mLastReadout[(int)readoutType] = System.DateTime.Now.Ticks;
+            Log($"[{readoutType.ToString().PadRight(48)}]: {message}");
+        }
+
+
         public void Log(string message, bool error = false)
         {
 #if DEV_BUILD
             try
             {
 #endif
-                string logMessage = $"[{TicksSinceStart}t/{TicksSinceStart * MillisecondsPerTick}ms/{TicksSinceStart * SecondsPerTick}s] {message}";
+                string logMessage = $"[{TicksSinceStart.ToString().PadRight(12)}t/{(TicksSinceStart * MillisecondsPerTick).ToString().PadRight(12)}ms/{(TicksSinceStart * SecondsPerTick).ToString().PadRight(12)}s] {message}";
                 if (error)
                 {
                     mLogErrorAction.Invoke(logMessage);
@@ -132,11 +166,13 @@ namespace MonsieurMeh.Mods.TLD.BearSpearReloaded
 
     public static class Helpers
     {
-        public static BearSpearReloadedManager Manager { get { return BearSpearReloadedManager.Instance; } }
-        public static void Log(string msg, bool error = false) => BearSpearReloadedManager.Instance.Log(msg, error);
-        public static void Log(BaseAi baseAi, string msg, bool error = false) => BearSpearReloadedManager.Instance.Log(baseAi, msg, error);
+        public static BearSpearReloadedManager Manager { get { return Instance; } }
+        public static void Log(string msg, bool error = false) => Instance.Log(msg, error);
+        public static void Log(BaseAi baseAi, string msg, bool error = false) => Instance.Log(baseAi, msg, error);
         public static void LogError(string msg) => Log(msg, true);
         public static void LogError(BaseAi baseAi, string msg) => Log(baseAi, msg, true);
-
+        public static bool ReadyForReadout(Readouts readoutType, int msFrequency) => Instance.ReadyForReadout(readoutType, msFrequency); 
+        public static void TryReadout(string message, Readouts readoutType, int msFrequency) => Instance.TryReadout(message, readoutType, msFrequency); 
+        public static void Readout(string message, Readouts readoutType) => Instance.Readout(message, readoutType);
     }
 }
