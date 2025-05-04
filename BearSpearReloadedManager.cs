@@ -57,8 +57,10 @@ namespace MonsieurMeh.Mods.TLD.BearSpearReloaded
         private bool mEnabled = false;
         private long mStartTime = System.DateTime.Now.Ticks;
         private long[] mLastReadout = new long[(int)Readouts.COUNT];
+        private BaseAi mNearestAi;
 
         private long TicksSinceStart { get { return System.DateTime.Now.Ticks - mStartTime; } }
+        public BaseAi NearestAi { get { return mNearestAi; } set { mNearestAi = value; } }
 
 
         public bool Initialize(Settings settings, Action<string> logMessageAction, Action<string> logErrorAction)
